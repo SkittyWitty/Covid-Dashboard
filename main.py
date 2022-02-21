@@ -28,34 +28,21 @@ COUNTY_ID = "countyFIPS"
 # start of the pandemic. Weeks start on Sunday and end on Saturday.
 # Only include full weeks.
 dates = deaths.keys()
+SUNDAY = 6 # Integer the datetime functionaility associates with Sunday
 
 # Will sum all columns that have numeric values
 death_sum = deaths.sum(axis=0, numeric_only=True) # is now a series
 death_sum = death_sum.drop([COUNTY_ID, STATE_ID])
 death_sum = death_sum.to_frame().reset_index()
-death_sum = death_sum.rename(columns={"index":"Date", "0":"Total Deaths"})
-#death_sum["Date"] = pd.to_datetime(death_sum["Date"])
+death_sum = death_sum.rename(columns={"index":"Date", 0:"Total Deaths"})
+death_sum["Date"] = pd.to_datetime(death_sum["Date"])
 st.write(death_sum)
 
 # Want to groupby to get the sum for the entire week
-# lambda <arguments> : <return_1> if <condition> else <return_2>
+week_start = lambda row: row["Date"] if (row["Date"].weekday() == SUNDAY) else row["Date"] - dt.timedelta(days=row["Date"].weekday() + 1)
+death_sum["Week Date"] = death_sum.apply(week_start, axis=1)
 
-# death_sum["Week Date"] = death_sum.apply(lambda row: row['Date'] - dt.timedelta(days=row['Date'].weekday()), axis=1)
-# st.write(death_sum)
-# total_entries = 10
-idx = pd.date_range(start="2022-02-20", freq="D", periods=6)
-sunday = idx[0] # 2022-02-20
-monday = idx[1] # 2022-02-21
-wednesday = idx[3] # 2022-02-23
-thursday = idx[4]
-
-st.write(monday)
-
-SUNDAY = 6
-
-# Goal is to convert Monday to Sunday
-meh = lambda date: date if (date.weekday() == SUNDAY) else date - dt.timedelta(days=date.weekday() + 1)
-st.write(meh(sunday))
+st.write(death_sum)
 
 #st.write(monday - dt.timedelta(days=monday.weekday() + 1))
 

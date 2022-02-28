@@ -98,12 +98,13 @@ st.line_chart(death_sum)
 # Using Plotly Choropleth map produce a map of the USA displaying for each county the new 
 # cases of covid per 100,000 people in a week. Display the data as a color in each county. An 
 # example is below. You need to pick a color scale that is appropriate for the data.
-@st.cache
+@st.experimental_memo
 def get_cases():
     # Goal Data
-    # Week (Sunday Date)| County | Number of new cases that week / 100,000
+    # County | Week (Sunday Date) | Number of new cases that week / 100,000
     weekly_county_cases = confirmed_cases.drop([COUNTY_NAME, STATE, STATE_ID], axis=1)
     weekly_county_cases = weekly_county_cases[weekly_county_cases[COUNTY_ID] > 0] # Removing State Unallocated areas unable to properly render on map
+    
     # Adding a "0" to COUNTY_ID's that are too short
     weekly_county_cases[COUNTY_ID] = weekly_county_cases[COUNTY_ID].astype(str)
     weekly_county_cases[COUNTY_ID] = weekly_county_cases.apply(county_id_tranfrom, axis=1)
@@ -134,14 +135,12 @@ def get_cases():
 # region Q4
 # Using Plotly Choropleth map produce a map of the USA displaying for each county the 
 # covid deaths per 100,000 people in a week. Display the data as a color in each county.
-@st.cache
+@st.experimental_memo
 def get_deaths():
     # Goal Data
-    # Week (Sunday Date)| County | Number of new cases that week / 100,000
+    # County | Week (Sunday Date) | Number of deaths that week / 100,000
     weekly_deaths = deaths.drop([COUNTY_NAME, STATE, STATE_ID], axis=1)
     weekly_deaths = weekly_deaths[weekly_deaths[COUNTY_ID] > 0] # Removing State Unallocated areas unable to properly render on map
-
-    #weekly_deaths = weekly_deaths[weekly_deaths[COUNTY_ID] == 6075]
 
     # Adding a "0" to COUNTY_ID's that are too short
     weekly_deaths[COUNTY_ID] = weekly_deaths[COUNTY_ID].astype(str)
@@ -163,7 +162,7 @@ def get_deaths():
     # Remove short weeks
     weekly_deaths = weekly_deaths.drop(index=new_case_short_weeks, level=1)
     weekly_deaths = weekly_deaths.reset_index()
-
+    
     # per 100,000 people
     weekly_deaths["deaths"] = weekly_deaths["deaths"].divide(100000)
     return weekly_deaths
@@ -178,7 +177,9 @@ LAST_WEEK = new_case_valid_weeks[NUMBER_OF_WEEKS]
 
 weekly_county_cases = get_cases()
 weekly_deaths = get_deaths()
+weekly_deaths
 
+@st.experimental_memo
 def new_cases_map(week):
     week_formatted = week.replace(hour=0, minute=0, second=0)
     week_case = weekly_county_cases[weekly_county_cases[WEEK_DATE] == week_formatted]
@@ -192,6 +193,7 @@ def new_cases_map(week):
     fig.update_layout(title_text="Weekly New Cases")
     return fig
 
+@st.experimental_memo
 def death_map(week):
     week_formatted = week.replace(hour=0, minute=0, second=0)
     week_case = weekly_deaths[weekly_deaths[WEEK_DATE] == week_formatted]
@@ -205,13 +207,7 @@ def death_map(week):
     fig.update_layout(title_text="Weekly Deaths")
     return fig
 
-def both():
-    with st.spinner('Fetching a new map'):
-        new_cases_map()
-        death_map()
-
-def meh():
-    with st.form("Compute_Values"):
+with st.form("Compute_Values"):
         week = st.slider(
             label='What week is it?',
             value=FIRST_WEEK,
@@ -223,15 +219,6 @@ def meh():
         with st.spinner('Fetching a new map'):
             st.plotly_chart(new_cases_map(week))
             st.plotly_chart(death_map(week))
-meh()
-
-if st.button("Auto Play"):
-    for i in range(5):
-        week = new_case_valid_weeks[i],
-        new_cases_map(week)
-        death_map(week)
-        # Sleep for a bit before displaying the next map
-        time.sleep(0.1)
 # endregion
 
 

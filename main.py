@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime as dt
 import plotly.express as px
-import time
+from PIL import Image
 
 # imports to support opening and reading USA county geojson data
 from urllib.request import urlopen
@@ -174,15 +174,26 @@ def get_deaths():
 FIRST_WEEK = new_case_valid_weeks[0]
 NUMBER_OF_WEEKS = len(new_case_valid_weeks) - 1
 LAST_WEEK = new_case_valid_weeks[NUMBER_OF_WEEKS]
+DATE_SAVE_FORMAT = "%Y-%m-%d"
 
 weekly_county_cases = get_cases()
 weekly_deaths = get_deaths()
-weekly_deaths
+
+if "images" not in st.session_state:
+    #Should read in existing images if any otherwise empty dictionary
+    st.session_state.images = dict()
+
+if "auto_play" not in st.session_state:
+    st.session_state.week = FIRST_WEEK
+    st.session_state.count = 0
+    st.session_state.auto_play = False
 
 @st.experimental_memo
 def new_cases_map(week):
-    week_formatted = week.replace(hour=0, minute=0, second=0)
-    week_case = weekly_county_cases[weekly_county_cases[WEEK_DATE] == week_formatted]
+    week = week.replace(hour=0, minute=0, second=0)
+    week_formatted = week.strftime(DATE_SAVE_FORMAT)
+    week_case = weekly_county_cases[weekly_county_cases[WEEK_DATE] == week]
+
     fig = px.choropleth(week_case, title="New Cases per 100,000",
     geojson=counties, locations=COUNTY_ID,
                                 color='cases',
@@ -190,13 +201,18 @@ def new_cases_map(week):
                                 range_color=[0, 1.0],
                                 scope="usa",
                                 labels={'cases':'Cases per 100k'})
-    fig.update_layout(title_text="Weekly New Cases")
+    fig.update_layout(title_text="New Cases Week: " + week_formatted)
+    meh = "D:/Users/kawii/uni/BigData-CS649/Covid-Dashboard/images/new_cases_maps/" + week_formatted + ".png"
+    st.session_state.images[week_formatted] = meh
+    fig.write_image(file=meh)
     return fig
 
 @st.experimental_memo
 def death_map(week):
-    week_formatted = week.replace(hour=0, minute=0, second=0)
-    week_case = weekly_deaths[weekly_deaths[WEEK_DATE] == week_formatted]
+    week = week.replace(hour=0, minute=0, second=0)
+    week_formatted = week.strftime(DATE_SAVE_FORMAT)
+    week_case = weekly_deaths[weekly_deaths[WEEK_DATE] == week]
+
     fig = px.choropleth(week_case, title="Death's per 100,000",
     geojson=counties, locations=COUNTY_ID,
                                 color='deaths',
@@ -204,21 +220,37 @@ def death_map(week):
                                 range_color=[0, 1.0],
                                 scope="usa",
                                 labels={'cases':'Cases per 100k'})
-    fig.update_layout(title_text="Weekly Deaths")
+    fig.update_layout(title_text="Deaths Week: " + week_formatted)
     return fig
 
+
 with st.form("Compute_Values"):
+        if st.session_state.auto_play and st.session_state.count < NUMBER_OF_WEEKS:
+            st.session_state.auto_play = True
+            st.session_state.count += 1
+            st.session_state.week = new_case_valid_weeks[st.session_state.count]
+        else:
+            st.session_state.auto_play = False
+            st.session_state.week = FIRST_WEEK
+            st.session_state.count = 0
+# Maybe wrap entire slider into a function call
         week = st.slider(
-            label='What week is it?',
-            value=FIRST_WEEK,
-            min_value=FIRST_WEEK,
-            step=pd.Timedelta("7 days"),
-            max_value=LAST_WEEK,
-            format="YYYY-MM-DD")
+                label='What week is it?',
+                value=st.session_state.week,
+                min_value=FIRST_WEEK,
+                step=pd.Timedelta("7 days"),
+                max_value=LAST_WEEK,
+                format="YYYY-MM-DD")
         submitted = st.form_submit_button("Update Figure")
         with st.spinner('Fetching a new map'):
-            st.plotly_chart(new_cases_map(week))
-            st.plotly_chart(death_map(week))
+                st.plotly_chart(new_cases_map(week))
+                st.plotly_chart(death_map(week))
+
+
+def auto_play_on():
+    st.session_state.auto_play = True
+
+st.button("Auto Play", on_click=auto_play_on)
 # endregion
 
 

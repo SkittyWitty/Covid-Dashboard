@@ -27,6 +27,9 @@ confirmed_cases = pd.read_csv(PATH + "covid_confirmed_usafacts.csv")
 deaths          = pd.read_csv(PATH + "covid_deaths_usafacts.csv")
 # General population numbers of each county in the USA
 county_population = pd.read_csv(PATH + "covid_county_population_usafacts.csv")
+# Get counties where feature.id is the FIPS Code
+with urlopen('https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json') as response:
+    counties = json.load(response)
 
 
 # Common Functions
@@ -61,7 +64,7 @@ new_case_valid_weeks = new_case_week_day_count[new_case_week_day_count[DATE] == 
 new_case_sum = new_case_sum.groupby([WEEK_DATE]).sum()
 new_case_sum = new_case_sum.drop(new_case_short_weeks)
 
-st.write("New Weekly Cases")
+st.write("New Weekly Cases Trend")
 st.line_chart(new_case_sum)
 #endregion
 
@@ -87,109 +90,148 @@ death_valid_weeks = death_week_day_count[death_week_day_count[DATE] == 7].index.
 death_sum = death_sum.groupby(["Week Date"]).sum()
 death_sum = death_sum.drop(death_short_weeks)
 
-st.write("Weekly Deaths")
+st.write("Weekly Deaths Trend")
 st.line_chart(death_sum)
 #endregion
-
 
 # region Q3
 # Using Plotly Choropleth map produce a map of the USA displaying for each county the new 
 # cases of covid per 100,000 people in a week. Display the data as a color in each county. An 
 # example is below. You need to pick a color scale that is appropriate for the data.
+@st.cache
+def get_cases():
+    # Goal Data
+    # Week (Sunday Date)| County | Number of new cases that week / 100,000
+    weekly_county_cases = confirmed_cases.drop([COUNTY_NAME, STATE, STATE_ID], axis=1)
+    weekly_county_cases = weekly_county_cases[weekly_county_cases[COUNTY_ID] > 0] # Removing State Unallocated areas unable to properly render on map
+    # Adding a "0" to COUNTY_ID's that are too short
+    weekly_county_cases[COUNTY_ID] = weekly_county_cases[COUNTY_ID].astype(str)
+    weekly_county_cases[COUNTY_ID] = weekly_county_cases.apply(county_id_tranfrom, axis=1)
 
-# Get counties where feature.id is the FIPS Code
-with urlopen('https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json') as response:
-    counties = json.load(response)
+    dates = weekly_county_cases.keys().tolist()
+    dates.remove(COUNTY_ID) # removing County FIPS from the list
 
-# Goal Data
-# Week (Sunday Date)| County | Number of new cases that week / 100,000
-weekly_county_cases = confirmed_cases.drop([COUNTY_NAME, STATE, STATE_ID], axis=1)
-weekly_county_cases = weekly_county_cases[weekly_county_cases[COUNTY_ID] > 0] # Removing State Unallocated areas unable to properly render on map
+    # If county FIPS only has 4 characters add a "0" to the beginning
+    weekly_county_cases = weekly_county_cases.melt(id_vars=[COUNTY_ID], value_vars=dates, var_name=DATE, value_name="cases")
+    weekly_county_cases[DATE] = pd.to_datetime(weekly_county_cases[DATE], format="%Y-%m-%d")
 
-weekly_county_cases = weekly_county_cases[weekly_county_cases[COUNTY_ID] == 6075]
+    # Calculating the week start date of each date
+    weekly_county_cases[WEEK_DATE] = weekly_county_cases.apply(week_start, axis=1) # This function takes forever
 
-# Adding a "0" to COUNTY_ID's that are too short
-weekly_county_cases[COUNTY_ID] = weekly_county_cases[COUNTY_ID].astype(str)
-weekly_county_cases[COUNTY_ID] = weekly_county_cases.apply(county_id_tranfrom, axis=1)
+    # Retain Week Date and County FIPS. Summing over all cases that have the same week date
+    weekly_county_cases = weekly_county_cases.groupby([COUNTY_ID, WEEK_DATE]).sum()
 
-dates = weekly_county_cases.keys().tolist()
-dates.remove(COUNTY_ID) # removing County FIPS from the list
+    # Remove short weeks
+    weekly_county_cases = weekly_county_cases.drop(index=new_case_short_weeks, level=1)
+    weekly_county_cases = weekly_county_cases.reset_index()
 
-# If county FIPS only has 4 characters add a "0" to the beginning
-weekly_county_cases = weekly_county_cases.melt(id_vars=[COUNTY_ID], value_vars=dates, var_name=DATE, value_name="cases")
-weekly_county_cases[DATE] = pd.to_datetime(weekly_county_cases[DATE], format="%Y-%m-%d")
+    # per 100,000 people
+    weekly_county_cases["cases"] = weekly_county_cases["cases"].divide(100000)
+    return weekly_county_cases
+#endregion
 
-# Calculating the week start date of each date
-weekly_county_cases[WEEK_DATE] = weekly_county_cases.apply(week_start, axis=1) # This function takes forever
 
-# Retain Week Date and County FIPS. Summing over all cases that have the same week date
-weekly_county_cases = weekly_county_cases.groupby([COUNTY_ID, WEEK_DATE]).sum()
+# region Q4
+# Using Plotly Choropleth map produce a map of the USA displaying for each county the 
+# covid deaths per 100,000 people in a week. Display the data as a color in each county.
+@st.cache
+def get_deaths():
+    # Goal Data
+    # Week (Sunday Date)| County | Number of new cases that week / 100,000
+    weekly_deaths = deaths.drop([COUNTY_NAME, STATE, STATE_ID], axis=1)
+    weekly_deaths = weekly_deaths[weekly_deaths[COUNTY_ID] > 0] # Removing State Unallocated areas unable to properly render on map
 
-# Remove short weeks
-weekly_county_cases = weekly_county_cases.drop(index=new_case_short_weeks, level=1)
-weekly_county_cases = weekly_county_cases.reset_index()
+    #weekly_deaths = weekly_deaths[weekly_deaths[COUNTY_ID] == 6075]
 
-# per 100,000 people
-weekly_county_cases["cases"] = weekly_county_cases["cases"].divide(100000)
+    # Adding a "0" to COUNTY_ID's that are too short
+    weekly_deaths[COUNTY_ID] = weekly_deaths[COUNTY_ID].astype(str)
+    weekly_deaths[COUNTY_ID] = weekly_deaths.apply(county_id_tranfrom, axis=1)
 
+    dates = weekly_deaths.keys().tolist()
+    dates.remove(COUNTY_ID) # removing County FIPS from the list
+
+    # If county FIPS only has 4 characters add a "0" to the beginning
+    weekly_deaths = weekly_deaths.melt(id_vars=[COUNTY_ID], value_vars=dates, var_name=DATE, value_name="deaths")
+    weekly_deaths[DATE] = pd.to_datetime(weekly_deaths[DATE], format="%Y-%m-%d")
+
+    # Calculating the week start date of each date
+    weekly_deaths[WEEK_DATE] = weekly_deaths.apply(week_start, axis=1) # This function takes forever
+
+    # Retain Week Date and County FIPS. Summing over all cases that have the same week date
+    weekly_deaths = weekly_deaths.groupby([COUNTY_ID, WEEK_DATE]).sum()
+
+    # Remove short weeks
+    weekly_deaths = weekly_deaths.drop(index=new_case_short_weeks, level=1)
+    weekly_deaths = weekly_deaths.reset_index()
+
+    # per 100,000 people
+    weekly_deaths["deaths"] = weekly_deaths["deaths"].divide(100000)
+    return weekly_deaths
+#endregion
+
+
+# region Q5 & Q6
 # Slider
 FIRST_WEEK = new_case_valid_weeks[0]
 NUMBER_OF_WEEKS = len(new_case_valid_weeks) - 1
 LAST_WEEK = new_case_valid_weeks[NUMBER_OF_WEEKS]
 
-week = FIRST_WEEK
+weekly_county_cases = get_cases()
+weekly_deaths = get_deaths()
 
-def new_cases_map():
-    with st.spinner('Fetching a new map'):
-        week_formatted = week.replace(hour=0, minute=0, second=0)
-        week_case = weekly_county_cases[weekly_county_cases[WEEK_DATE] == week_formatted]
-        fig = px.choropleth(week_case,
-        geojson=counties, locations=COUNTY_ID,
+def new_cases_map(week):
+    week_formatted = week.replace(hour=0, minute=0, second=0)
+    week_case = weekly_county_cases[weekly_county_cases[WEEK_DATE] == week_formatted]
+    fig = px.choropleth(week_case, title="New Cases per 100,000",
+    geojson=counties, locations=COUNTY_ID,
                                 color='cases',
                                 color_continuous_scale="viridis",
-                                range_color=(0, 5),
+                                range_color=[0, 1.0],
                                 scope="usa",
-                                labels={'cases':'Weekly Cases'})
-        fig.update_layout(title_text="Weekly New Cases", margin={"r": 0, "t": 0, "l": 0, "b": 0})
-        return fig
+                                labels={'cases':'Cases per 100k'})
+    fig.update_layout(title_text="Weekly New Cases")
+    return fig
 
-with st.form("Compute_Values"):
-    week = st.slider(
-        label='What week is it?',
-        min_value=FIRST_WEEK,
-        step=pd.Timedelta("7 days"),
-        max_value=LAST_WEEK,
-        format="YYYY-MM-DD")
-    submitted = st.form_submit_button("Update Figure", on_click=new_cases_map)
-    st.plotly_chart(new_cases_map())
-
-def death_map():
-    with st.spinner('Fetching a new map'):
-        week_formatted = week.replace(hour=0, minute=0, second=0)
-        week_case = weekly_county_cases[weekly_county_cases[WEEK_DATE] == week_formatted]
-        fig = px.choropleth(week_case,
-        geojson=counties, locations=COUNTY_ID,
-                                color='cases',
+def death_map(week):
+    week_formatted = week.replace(hour=0, minute=0, second=0)
+    week_case = weekly_deaths[weekly_deaths[WEEK_DATE] == week_formatted]
+    fig = px.choropleth(week_case, title="Death's per 100,000",
+    geojson=counties, locations=COUNTY_ID,
+                                color='deaths',
                                 color_continuous_scale="viridis",
-                                range_color=[0, 5.0],
+                                range_color=[0, 1.0],
                                 scope="usa",
-                                labels={'cases':'Weekly Cases'})
-        fig.update_layout(title_text="Weekly New Cases", margin={"r": 0, "t": 0, "l": 0, "b": 0})
-        return fig
-    
-def auto_play():
-    for i in range(NUMBER_OF_WEEKS):
-        week = new_case_valid_weeks[i]
-        st.write(week)
-        # # Update status text.
-        # status_text.text(
-        #     'The latest random number is: %s' % new_rows[-1, 1])
+                                labels={'cases':'Cases per 100k'})
+    fig.update_layout(title_text="Weekly Deaths")
+    return fig
 
+def both():
+    with st.spinner('Fetching a new map'):
+        new_cases_map()
+        death_map()
+
+def meh():
+    with st.form("Compute_Values"):
+        week = st.slider(
+            label='What week is it?',
+            value=FIRST_WEEK,
+            min_value=FIRST_WEEK,
+            step=pd.Timedelta("7 days"),
+            max_value=LAST_WEEK,
+            format="YYYY-MM-DD")
+        submitted = st.form_submit_button("Update Figure")
+        with st.spinner('Fetching a new map'):
+            st.plotly_chart(new_cases_map(week))
+            st.plotly_chart(death_map(week))
+meh()
+
+if st.button("Auto Play"):
+    for i in range(5):
+        week = new_case_valid_weeks[i],
+        new_cases_map(week)
+        death_map(week)
         # Sleep for a bit before displaying the next map
         time.sleep(0.1)
-
-st.button(label="Auto Play", on_click=auto_play)
-
 # endregion
 
 

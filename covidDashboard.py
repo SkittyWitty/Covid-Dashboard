@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import datetime as dt
 import plotly.express as px
-import time
 
 # imports to support opening and reading USA county geojson data
 from urllib.request import urlopen

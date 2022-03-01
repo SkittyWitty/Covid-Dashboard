@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import datetime as dt
 import plotly.express as px
-from PIL import Image
 
 # imports to support opening and reading USA county geojson data
 from urllib.request import urlopen
@@ -11,6 +10,7 @@ import json
 # Constants
 PATH = "./"
 SUNDAY = 6 # Integer the datetime functionaility associates with Sunday
+CAPITA_GUIDELINES = 100000
 
 # Column Labels
 STATE       = "State"
@@ -18,15 +18,16 @@ COUNTY_NAME = "County Name"
 STATE_ID    = "StateFIPS"
 COUNTY_ID   = "countyFIPS"
 POPULATION  = "population"
-DATE = "Date"
-WEEK_DATE = "Week Date"
-FIPS = "fips"
+DATE        = "Date"
+WEEK_DATE   = "Week Date"
+FIPS        = "fips"
 
 # Load in all datasets
 confirmed_cases = pd.read_csv(PATH + "covid_confirmed_usafacts.csv")
 deaths          = pd.read_csv(PATH + "covid_deaths_usafacts.csv")
 # General population numbers of each county in the USA
 county_population = pd.read_csv(PATH + "covid_county_population_usafacts.csv")
+
 # Get counties where feature.id is the FIPS Code
 with urlopen('https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json') as response:
     counties = json.load(response)
@@ -94,6 +95,12 @@ st.write("Weekly Deaths Trend")
 st.line_chart(death_sum)
 #endregion
 
+# region Prepare County Population Data
+county_population = county_population.drop([COUNTY_NAME, STATE], axis=1)
+county_population[COUNTY_ID] = county_population[COUNTY_ID].astype(str)
+county_population[COUNTY_ID] = county_population.apply(county_id_tranfrom, axis=1)
+# endregion
+
 # region Q3
 # Using Plotly Choropleth map produce a map of the USA displaying for each county the new 
 # cases of covid per 100,000 people in a week. Display the data as a color in each county. An 
@@ -104,7 +111,7 @@ def get_cases():
     # County | Week (Sunday Date) | Number of new cases that week / 100,000
     weekly_county_cases = confirmed_cases.drop([COUNTY_NAME, STATE, STATE_ID], axis=1)
     weekly_county_cases = weekly_county_cases[weekly_county_cases[COUNTY_ID] > 0] # Removing State Unallocated areas unable to properly render on map
-    
+
     # Adding a "0" to COUNTY_ID's that are too short
     weekly_county_cases[COUNTY_ID] = weekly_county_cases[COUNTY_ID].astype(str)
     weekly_county_cases[COUNTY_ID] = weekly_county_cases.apply(county_id_tranfrom, axis=1)
@@ -126,8 +133,10 @@ def get_cases():
     weekly_county_cases = weekly_county_cases.drop(index=new_case_short_weeks, level=1)
     weekly_county_cases = weekly_county_cases.reset_index()
 
-    # per 100,000 people
-    weekly_county_cases["cases"] = weekly_county_cases["cases"].divide(100000)
+    # Merge in Counties total population. Calculate cases per capita guidelines.
+    weekly_county_cases = weekly_county_cases.merge(county_population, how='left', on=COUNTY_ID)
+    weekly_county_cases["cases"] = (weekly_county_cases["cases"] * CAPITA_GUIDELINES) / weekly_county_cases[POPULATION]
+    
     return weekly_county_cases
 #endregion
 
@@ -163,14 +172,14 @@ def get_deaths():
     weekly_deaths = weekly_deaths.drop(index=new_case_short_weeks, level=1)
     weekly_deaths = weekly_deaths.reset_index()
     
-    # per 100,000 people
-    weekly_deaths["deaths"] = weekly_deaths["deaths"].divide(100000)
+    # Merge in Counties total population. Calculate deaths per capita guidelines.
+    weekly_deaths = weekly_deaths.merge(county_population, how='left', on=COUNTY_ID)
+    weekly_deaths["deaths"] = (weekly_deaths["deaths"] * CAPITA_GUIDELINES) / weekly_deaths[POPULATION]
     return weekly_deaths
 #endregion
 
-
 # region Q5 & Q6
-# Slider
+# Map and Slider Constants
 FIRST_WEEK = new_case_valid_weeks[0]
 NUMBER_OF_WEEKS = len(new_case_valid_weeks) - 1
 LAST_WEEK = new_case_valid_weeks[NUMBER_OF_WEEKS]
@@ -179,78 +188,63 @@ DATE_SAVE_FORMAT = "%Y-%m-%d"
 weekly_county_cases = get_cases()
 weekly_deaths = get_deaths()
 
-if "images" not in st.session_state:
-    #Should read in existing images if any otherwise empty dictionary
-    st.session_state.images = dict()
-
-if "auto_play" not in st.session_state:
-    st.session_state.week = FIRST_WEEK
-    st.session_state.count = 0
-    st.session_state.auto_play = False
-
 @st.experimental_memo
 def new_cases_map(week):
+    # Prepare DateTime of week to be used for filtering and displaying
     week = week.replace(hour=0, minute=0, second=0)
     week_formatted = week.strftime(DATE_SAVE_FORMAT)
+    week
     week_case = weekly_county_cases[weekly_county_cases[WEEK_DATE] == week]
 
-    fig = px.choropleth(week_case, title="New Cases per 100,000",
+    figure = px.choropleth(week_case, title="New Cases per 100,000",
     geojson=counties, locations=COUNTY_ID,
                                 color='cases',
-                                color_continuous_scale="viridis",
-                                range_color=[0, 1.0],
+                                color_continuous_scale="amp",
+                                range_color=[0, CAPITA_GUIDELINES],
                                 scope="usa",
                                 labels={'cases':'Cases per 100k'})
-    fig.update_layout(title_text="New Cases Week: " + week_formatted)
-    meh = "D:/Users/kawii/uni/BigData-CS649/Covid-Dashboard/images/new_cases_maps/" + week_formatted + ".png"
-    st.session_state.images[week_formatted] = meh
-    fig.write_image(file=meh)
-    return fig
+    figure.update_layout(title_text="New Cases Recorded on Week: " + week_formatted)
+    return figure
 
 @st.experimental_memo
 def death_map(week):
+    # Prepare DateTime of week to be used for filtering and displaying
     week = week.replace(hour=0, minute=0, second=0)
     week_formatted = week.strftime(DATE_SAVE_FORMAT)
     week_case = weekly_deaths[weekly_deaths[WEEK_DATE] == week]
 
-    fig = px.choropleth(week_case, title="Death's per 100,000",
+    # Building map figure
+    figure = px.choropleth(week_case, title="Death's per 100,000",
     geojson=counties, locations=COUNTY_ID,
                                 color='deaths',
-                                color_continuous_scale="viridis",
-                                range_color=[0, 1.0],
+                                color_continuous_scale="amp",
+                                range_color=[0, 500],
                                 scope="usa",
-                                labels={'cases':'Cases per 100k'})
-    fig.update_layout(title_text="Deaths Week: " + week_formatted)
-    return fig
+                                labels={'deaths':'Deaths per 100k'})
+    figure.update_layout(title_text="Deaths Recorded on Week: " + week_formatted)
+    return figure
 
+with st.spinner('Fetching a new map'):
+    cases_map_location = st.empty()
+    death_map_location = st.empty()
 
 with st.form("Compute_Values"):
-        if st.session_state.auto_play and st.session_state.count < NUMBER_OF_WEEKS:
-            st.session_state.auto_play = True
-            st.session_state.count += 1
-            st.session_state.week = new_case_valid_weeks[st.session_state.count]
-        else:
-            st.session_state.auto_play = False
-            st.session_state.week = FIRST_WEEK
-            st.session_state.count = 0
-# Maybe wrap entire slider into a function call
-        week = st.slider(
-                label='What week is it?',
-                value=st.session_state.week,
-                min_value=FIRST_WEEK,
-                step=pd.Timedelta("7 days"),
-                max_value=LAST_WEEK,
-                format="YYYY-MM-DD")
-        submitted = st.form_submit_button("Update Figure")
-        with st.spinner('Fetching a new map'):
-                st.plotly_chart(new_cases_map(week))
-                st.plotly_chart(death_map(week))
+    week = st.slider(
+        label='What week is it?',
+        value=FIRST_WEEK,
+        min_value=FIRST_WEEK,
+        step=pd.Timedelta("7 days"),
+        max_value=LAST_WEEK,
+        format="YYYY-MM-DD")
+    submitted = st.form_submit_button("Update Figure")
 
+cases_map_location = st.plotly_chart(new_cases_map(week))
+death_map_location = st.plotly_chart(death_map(week))
 
-def auto_play_on():
-    st.session_state.auto_play = True
-
-st.button("Auto Play", on_click=auto_play_on)
+if st.button("Auto Play"):
+    for week in new_case_valid_weeks:
+        death_map_location = death_map(week)
+        death_map_location = new_cases_map(week)
 # endregion
 
 

@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime as dt
 import plotly.express as px
+import time
 
 # imports to support opening and reading USA county geojson data
 from urllib.request import urlopen
@@ -36,7 +37,7 @@ with urlopen('https://raw.githubusercontent.com/plotly/datasets/master/geojson-c
 # Common Functions
 # A week is defined as starting on Sunday and ending on Saturday
 week_start = lambda row: row[DATE] if (row[DATE].weekday() == SUNDAY) else row[DATE] - dt.timedelta(days=row[DATE].weekday() + 1)
-county_id_tranfrom = lambda row: "0" + row[COUNTY_ID] if (len(row[COUNTY_ID]) == 4) else row[COUNTY_ID]
+county_id_transform = lambda row: "0" + row[COUNTY_ID] if (len(row[COUNTY_ID]) == 4) else row[COUNTY_ID]
 
 # Begin displaying data
 st.title("COVID Dashboard")
@@ -98,7 +99,7 @@ st.line_chart(death_sum)
 # region Prepare County Population Data
 county_population = county_population.drop([COUNTY_NAME, STATE], axis=1)
 county_population[COUNTY_ID] = county_population[COUNTY_ID].astype(str)
-county_population[COUNTY_ID] = county_population.apply(county_id_tranfrom, axis=1)
+county_population[COUNTY_ID] = county_population.apply(county_id_transform, axis=1)
 # endregion
 
 # region Q3
@@ -106,20 +107,20 @@ county_population[COUNTY_ID] = county_population.apply(county_id_tranfrom, axis=
 # cases of covid per 100,000 people in a week. Display the data as a color in each county. An 
 # example is below. You need to pick a color scale that is appropriate for the data.
 @st.experimental_memo
-def get_cases():
+def get_cases(week):
+    dates = pd.date_range(week, periods=7).strftime("%Y-%m-%d").tolist()
+    col_list = dates
+    col_list.append(COUNTY_ID)
+
     # Goal Data
-    # County | Week (Sunday Date) | Number of new cases that week / 100,000
+    # County | Week (Sunday Date) | Number of cases that week per capita
     weekly_county_cases = confirmed_cases.drop([COUNTY_NAME, STATE, STATE_ID], axis=1)
     weekly_county_cases = weekly_county_cases[weekly_county_cases[COUNTY_ID] > 0] # Removing State Unallocated areas unable to properly render on map
 
-    # Adding a "0" to COUNTY_ID's that are too short
-    weekly_county_cases[COUNTY_ID] = weekly_county_cases[COUNTY_ID].astype(str)
-    weekly_county_cases[COUNTY_ID] = weekly_county_cases.apply(county_id_tranfrom, axis=1)
-
-    dates = weekly_county_cases.keys().tolist()
-    dates.remove(COUNTY_ID) # removing County FIPS from the list
-
     # If county FIPS only has 4 characters add a "0" to the beginning
+    weekly_county_cases[COUNTY_ID] = weekly_county_cases[COUNTY_ID].astype(str)
+    weekly_county_cases[COUNTY_ID] = weekly_county_cases.apply(county_id_transform, axis=1)
+
     weekly_county_cases = weekly_county_cases.melt(id_vars=[COUNTY_ID], value_vars=dates, var_name=DATE, value_name="cases")
     weekly_county_cases[DATE] = pd.to_datetime(weekly_county_cases[DATE], format="%Y-%m-%d")
 
@@ -128,9 +129,6 @@ def get_cases():
 
     # Retain Week Date and County FIPS. Summing over all cases that have the same week date
     weekly_county_cases = weekly_county_cases.groupby([COUNTY_ID, WEEK_DATE]).sum()
-
-    # Remove short weeks
-    weekly_county_cases = weekly_county_cases.drop(index=new_case_short_weeks, level=1)
     weekly_county_cases = weekly_county_cases.reset_index()
 
     # Merge in Counties total population. Calculate cases per capita guidelines.
@@ -145,36 +143,34 @@ def get_cases():
 # Using Plotly Choropleth map produce a map of the USA displaying for each county the 
 # covid deaths per 100,000 people in a week. Display the data as a color in each county.
 @st.experimental_memo
-def get_deaths():
+def get_deaths(week):
+    dates = pd.date_range(week, periods=7).strftime("%Y-%m-%d").tolist()
+    col_list = dates
+    col_list.append(COUNTY_ID)
+
     # Goal Data
-    # County | Week (Sunday Date) | Number of deaths that week / 100,000
-    weekly_deaths = deaths.drop([COUNTY_NAME, STATE, STATE_ID], axis=1)
+    # County | Week (Sunday Date) | Number of deaths that week per capita
+    weekly_deaths = deaths[col_list]
     weekly_deaths = weekly_deaths[weekly_deaths[COUNTY_ID] > 0] # Removing State Unallocated areas unable to properly render on map
-
-    # Adding a "0" to COUNTY_ID's that are too short
-    weekly_deaths[COUNTY_ID] = weekly_deaths[COUNTY_ID].astype(str)
-    weekly_deaths[COUNTY_ID] = weekly_deaths.apply(county_id_tranfrom, axis=1)
-
-    dates = weekly_deaths.keys().tolist()
-    dates.remove(COUNTY_ID) # removing County FIPS from the list
-
+    
     # If county FIPS only has 4 characters add a "0" to the beginning
+    weekly_deaths[COUNTY_ID] = weekly_deaths[COUNTY_ID].astype(str)
+    weekly_deaths[COUNTY_ID] = weekly_deaths.apply(county_id_transform, axis=1)
+    
     weekly_deaths = weekly_deaths.melt(id_vars=[COUNTY_ID], value_vars=dates, var_name=DATE, value_name="deaths")
     weekly_deaths[DATE] = pd.to_datetime(weekly_deaths[DATE], format="%Y-%m-%d")
-
+    
     # Calculating the week start date of each date
     weekly_deaths[WEEK_DATE] = weekly_deaths.apply(week_start, axis=1) # This function takes forever
 
     # Retain Week Date and County FIPS. Summing over all cases that have the same week date
     weekly_deaths = weekly_deaths.groupby([COUNTY_ID, WEEK_DATE]).sum()
-
-    # Remove short weeks
-    weekly_deaths = weekly_deaths.drop(index=new_case_short_weeks, level=1)
     weekly_deaths = weekly_deaths.reset_index()
-    
+
     # Merge in Counties total population. Calculate deaths per capita guidelines.
     weekly_deaths = weekly_deaths.merge(county_population, how='left', on=COUNTY_ID)
     weekly_deaths["deaths"] = (weekly_deaths["deaths"] * CAPITA_GUIDELINES) / weekly_deaths[POPULATION]
+    
     return weekly_deaths
 #endregion
 
@@ -185,16 +181,11 @@ NUMBER_OF_WEEKS = len(new_case_valid_weeks) - 1
 LAST_WEEK = new_case_valid_weeks[NUMBER_OF_WEEKS]
 DATE_SAVE_FORMAT = "%Y-%m-%d"
 
-weekly_county_cases = get_cases()
-weekly_deaths = get_deaths()
-
-@st.experimental_memo
 def new_cases_map(week):
     # Prepare DateTime of week to be used for filtering and displaying
     week = week.replace(hour=0, minute=0, second=0)
     week_formatted = week.strftime(DATE_SAVE_FORMAT)
-    week
-    week_case = weekly_county_cases[weekly_county_cases[WEEK_DATE] == week]
+    week_case = get_cases(week_formatted)
 
     figure = px.choropleth(week_case, title="New Cases per 100,000",
     geojson=counties, locations=COUNTY_ID,
@@ -206,19 +197,18 @@ def new_cases_map(week):
     figure.update_layout(title_text="New Cases Recorded on Week: " + week_formatted)
     return figure
 
-@st.experimental_memo
 def death_map(week):
     # Prepare DateTime of week to be used for filtering and displaying
     week = week.replace(hour=0, minute=0, second=0)
     week_formatted = week.strftime(DATE_SAVE_FORMAT)
-    week_case = weekly_deaths[weekly_deaths[WEEK_DATE] == week]
+    week_case = get_deaths(week_formatted)
 
     # Building map figure
     figure = px.choropleth(week_case, title="Death's per 100,000",
     geojson=counties, locations=COUNTY_ID,
                                 color='deaths',
                                 color_continuous_scale="amp",
-                                range_color=[0, 500],
+                                range_color=[0, 5000],
                                 scope="usa",
                                 labels={'deaths':'Deaths per 100k'})
     figure.update_layout(title_text="Deaths Recorded on Week: " + week_formatted)
@@ -230,7 +220,7 @@ with st.spinner('Fetching a new map'):
 
 with st.form("Compute_Values"):
     week = st.slider(
-        label='What week is it?',
+        label='Please select a week.',
         value=FIRST_WEEK,
         min_value=FIRST_WEEK,
         step=pd.Timedelta("7 days"),
@@ -238,13 +228,13 @@ with st.form("Compute_Values"):
         format="YYYY-MM-DD")
     submitted = st.form_submit_button("Update Figure")
 
-cases_map_location = st.plotly_chart(new_cases_map(week))
-death_map_location = st.plotly_chart(death_map(week))
-
 if st.button("Auto Play"):
     for week in new_case_valid_weeks:
-        death_map_location = death_map(week)
-        death_map_location = new_cases_map(week)
+        death_map_location.plotly_chart(death_map(week))
+        cases_map_location.plotly_chart(new_cases_map(week))
+else:
+    cases_map_location.plotly_chart(new_cases_map(week))
+    death_map_location.plotly_chart(death_map(week))
 # endregion
 
 

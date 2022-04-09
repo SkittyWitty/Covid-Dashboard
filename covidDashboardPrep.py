@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import datetime as dt
+import streamlit as st
 
 
 STATE       = "State"
@@ -51,4 +52,22 @@ def trimDays(data, day_list):
     data = data.drop(data.columns[removeFromStart], axis=1)
 
     return data
+
+def calculateWeeklySum(new_weekly, start_week_list, replace_data, replace_id, new_label):
+    m = len(new_weekly.columns)
+
+    for i in reversed(range(m)):
+        if(i != 0):
+            new_weekly.iloc[:, i] = new_weekly.iloc[:, i] - new_weekly.iloc[:, i-1]
+            new_weekly.iloc[:, i] = new_weekly.iloc[:, i].clip(0)
+
+    new_weekly = new_weekly.groupby([i//7 for i in range(0, m)], axis = 1).sum()
+
+    new_weekly.columns = start_week_list
+    new_weekly[replace_id] = replace_data
+    new_weekly = new_weekly.melt(id_vars=[replace_id], value_vars=start_week_list, var_name=DATE, value_name=new_label)
+    new_weekly = new_weekly.drop([replace_id], axis = 1)
+    new_weekly = new_weekly.groupby([DATE]).sum()
+
+    return new_weekly
 # endregion

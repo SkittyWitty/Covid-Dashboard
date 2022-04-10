@@ -130,7 +130,6 @@ def scrubData(raw_data, data, id_label):
 # region Q3, Q4 per capita calculations
 # Using Plotly Choropleth map produce a map of the USA displaying for each county the new 
 # cases of and deaths from, covid per 100,000 people in a week.
-@st.experimental_memo
 def calculatePerCapita(data, pop_data, capita_guidelines=100000):
     """
     desc

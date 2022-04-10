@@ -3,11 +3,10 @@ import numpy as np
 import datetime as dt
 import streamlit as st
 
-
 DATE        = "Date"
 WEEK_DATE   = "Week Date"
-SUNDAY = 6 # Integer the datetime functionaility associates with Sunday
-WEEK_START = "Week Start"
+SUNDAY      = 6 # Integer the datetime functionaility associates with Sunday
+WEEK_START  = "Week Start"
 
 week_start_date = lambda date: date.name if (date.name.weekday() == SUNDAY) else date.name - dt.timedelta(days=date.name.weekday() + 1)
 
@@ -75,16 +74,14 @@ def scrubUnallocated(raw_data, data, id_label):
 
     return data
 
-# region Q3, Q4 calculations
+# region Q3, Q4 per capita calculations
 # Using Plotly Choropleth map produce a map of the USA displaying for each county the new 
 # cases of covid per 100,000 people in a week.
-
-# 4. Using Plotly Choropleth map produce a map of the USA displaying for each county the 
-# covid deaths per 100,000 people in a week.
-
 @st.experimental_memo
 def calculatePerCapita(data, pop_data, capita_guidelines=100000):
+    data.index = pop_data.index
     data = (data * (capita_guidelines))
     data = data.div(pop_data, axis=0).fillna(0)
+    data = data.astype('int64')
     return data
 # endregion

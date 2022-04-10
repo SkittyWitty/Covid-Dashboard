@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-import datetime as dt
-from covidDashboardPrep import county_id_transform, getMap, scrubUnallocated, weeklySumsPerCounty, totalWeeklySums, validDates, trimDays
+from covidDashboardPrep import calculatePerCapita, scrubUnallocated, weeklySumsPerCounty, totalWeeklySums, validDates, trimDays
+import plotly.express as px
 
 # imports to support opening and reading USA county geojson data
 from urllib.request import urlopen
@@ -19,6 +19,10 @@ POPULATION  = "population"
 DATE        = "Date"
 WEEK_DATE   = "Week Date"
 FIPS        = "fips"
+DEATHS      = "Deaths"
+CASES       = "Cases"
+
+CAPITA_GUIDELINES = 100000
 
 # Load in all datasets
 confirmed_cases     = pd.read_csv(PATH + "covid_confirmed_usafacts.csv")
@@ -41,7 +45,7 @@ new_weekly_cases_per_county = trimDays(new_weekly_cases_per_county, all_days_lis
 new_weekly_cases_per_county = weeklySumsPerCounty(new_weekly_cases_per_county, start_week_list)
 
 new_weekly_cases = new_weekly_cases_per_county.copy()
-new_weekly_cases = totalWeeklySums(new_weekly_cases, start_week_list, confirmed_cases[COUNTY_ID], COUNTY_ID, "Cases")
+new_weekly_cases = totalWeeklySums(new_weekly_cases, start_week_list, confirmed_cases[COUNTY_ID], COUNTY_ID, CASES)
 # endregion
 
 # region Q2
@@ -53,13 +57,16 @@ new_weekly_deaths_per_county = trimDays(new_weekly_deaths_per_county, all_days_l
 new_weekly_deaths_per_county = weeklySumsPerCounty(new_weekly_deaths_per_county, start_week_list)
 
 new_weekly_deaths = new_weekly_deaths_per_county.copy()
-new_weekly_deaths = totalWeeklySums(new_weekly_deaths, start_week_list, deaths[COUNTY_ID], COUNTY_ID, "Deaths")
+new_weekly_deaths = totalWeeklySums(new_weekly_deaths, start_week_list, deaths[COUNTY_ID], COUNTY_ID, DEATHS)
 # endregion
 
 # region Prepare County Population Data
 county_population = county_population.drop([COUNTY_NAME, STATE], axis=1)
 county_population = county_population[county_population[COUNTY_ID] > 0]
 county_population = county_population[county_population[POPULATION] > 0]
+county_population.index = county_population[COUNTY_ID]
+county_population = county_population.drop(COUNTY_ID, axis=1)
+st.write(county_population)
 # endregion
 
 # region Display Data
@@ -67,66 +74,52 @@ st.title("COVID Dashboard")
 
 # Display Q1
 st.write("New Weekly Cases Trend")
-#st.write(new_weekly_cases)
-new_weekly_cases_per_county = scrubUnallocated(confirmed_cases, new_weekly_cases_per_county)
-st.write(new_weekly_cases_per_county)
+weekly_cases_per_capita = scrubUnallocated(confirmed_cases, new_weekly_cases_per_county, COUNTY_ID)
+weekly_cases_per_capita = calculatePerCapita(weekly_cases_per_capita, county_population[POPULATION], CAPITA_GUIDELINES)
+st.write(weekly_cases_per_capita)
 st.line_chart(new_weekly_cases)
 
 # Display Q2
 st.write("Weekly Deaths Trend")
-#st.write(new_weekly_deaths)
-new_weekly_deaths_per_county = scrubUnallocated(deaths, new_weekly_deaths_per_county)
-st.write(new_weekly_deaths_per_county)
+new_weekly_deaths_per_county = scrubUnallocated(deaths, new_weekly_deaths_per_county, COUNTY_ID)
+
 st.line_chart(new_weekly_deaths)
 
-
-# Display Choropleth
-# def death_map(week):
-#     # Prepare DateTime of week to be used for filtering and displaying
-#     week = week.replace(hour=0, minute=0, second=0)
-#     week_formatted = week.strftime(DATE_SAVE_FORMAT)
-#     week_case = get_deaths(week_formatted)
+# region Display Choropleth
+# def get_map(week, data, label_to_color):
+#     week_case = data[week]
 
 #     # Building map figure
 #     figure = px.choropleth(week_case, title="Death's per 100,000",
-#     geojson=counties, locations=COUNTY_ID,
-#                                 color='deaths',
+#     geojson=counties, locations=data.index,
+#                                 color=week,
 #                                 color_continuous_scale="amp",
-#                                 range_color=[0, 5000],
+#                                 range_color=[0, 100],
 #                                 scope="usa",
-#                                 labels={'deaths':'Deaths per 100k'})
-#     figure.update_layout(title_text="Deaths Recorded on Week: " + week_formatted)
+#                                 labels={week:'Deaths per 100k'})
+#     figure.update_layout(title_text="Deaths Recorded on Week: " + str(week))
 #     return figure
 
-with st.spinner('Fetching a new map'):
-    cases_map_location = st.empty()
-    death_map_location = st.empty()
+# FIRST_WEEK = start_week_list[0]
+# LAST_WEEK = start_week_list[len(start_week_list) - 1]
+
+# with st.spinner('Fetching a new map'):
+#     cases_map_location = st.empty()
+#     death_map_location = st.empty()
 
 # with st.form("Compute_Values"):
-#     week = st.slider(
+#     week = st.select_slider(
 #         label='Please select a week.',
-#         value=start_week_list[0],
-#         min_value=FIRST_WEEK,
-#         step=pd.Timedelta("7 days"),
-#         max_value=LAST_WEEK,
-#         format="YYYY-MM-DD")
+#         options=start_week_list)
 #     submitted = st.form_submit_button("Update Figure")
 
 # if st.button("Auto Play"):
-#     for week in new_case_valid_weeks:
-#         death_map_location.plotly_chart(death_map(week))
-#         cases_map_location.plotly_chart(new_cases_map(week))
+#     for week in start_week_list:
+#         cases_map_location.plotly_chart(get_map(week, new_weekly_cases_per_county, CASES))
+#         death_map_location.plotly_chart(get_map(week, new_weekly_deaths_per_county, DEATHS))
 # else:
-#     cases_map_location.plotly_chart(new_cases_map(week))
-#     death_map_location.plotly_chart(death_map(week))
-
-
-# region Q3
-#getMap(start_week_list, new_weekly_cases_per_county)
-#getMap(deaths_start_week_list, new_weekly_deaths_per_county)
-# endrgion
-
-# Display Q4
+#     cases_map_location.plotly_chart(get_map(week, new_weekly_cases_per_county, CASES))
+#     death_map_location.plotly_chart(get_map(week, new_weekly_deaths_per_county, DEATHS))
 
 # endregion
 

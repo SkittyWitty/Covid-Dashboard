@@ -4,21 +4,11 @@ import datetime as dt
 import streamlit as st
 
 
-STATE       = "State"
-COUNTY_NAME = "County Name"
-STATE_ID    = "StateFIPS"
-COUNTY_ID   = "countyFIPS"
-POPULATION  = "population"
 DATE        = "Date"
 WEEK_DATE   = "Week Date"
-FIPS        = "fips"
-
 SUNDAY = 6 # Integer the datetime functionaility associates with Sunday
 WEEK_START = "Week Start"
-CAPITA_GUIDELINES = 100000
 
-# Common Functions
-county_id_transform = lambda row: "0" + row[COUNTY_ID] if (len(row[COUNTY_ID]) == 4) else row[COUNTY_ID]
 week_start_date = lambda date: date.name if (date.name.weekday() == SUNDAY) else date.name - dt.timedelta(days=date.name.weekday() + 1)
 
 # region Get Week Data
@@ -77,23 +67,24 @@ def totalWeeklySums(total_weekly, start_week_list, replace_data, replace_id, new
 
     return total_weekly
 
-def scrubUnallocated(raw_data, data):
-    data[COUNTY_ID] = raw_data[COUNTY_ID]
-    data = data[data[COUNTY_ID] > 0]
-    data.index = data[COUNTY_ID]
-    data = data.drop([COUNTY_ID], axis=1)
+def scrubUnallocated(raw_data, data, id_label):
+    data[id_label] = raw_data[id_label]
+    data = data[data[id_label] > 0]
+    data.index = data[id_label]
+    data = data.drop([id_label], axis=1)
 
     return data
 
-# region Q3
+# region Q3, Q4 calculations
 # Using Plotly Choropleth map produce a map of the USA displaying for each county the new 
-# cases of covid per 100,000 people in a week. Display the data as a color in each county. An 
-# example is below. You need to pick a color scale that is appropriate for the data.
-@st.experimental_memo
-def getMap(data, CAPITA_GUIDELINES, label, pop):
+# cases of covid per 100,000 people in a week.
 
-    # Merge in Counties total population. Calculate cases per capita guidelines.
-    data["meh"] = (data["cases"] * CAPITA_GUIDELINES) / data[POPULATION]
-    
+# 4. Using Plotly Choropleth map produce a map of the USA displaying for each county the 
+# covid deaths per 100,000 people in a week.
+
+@st.experimental_memo
+def calculatePerCapita(data, pop_data, capita_guidelines=100000):
+    data = (data * (capita_guidelines))
+    data = data.div(pop_data, axis=0).fillna(0)
     return data
 # endregion
